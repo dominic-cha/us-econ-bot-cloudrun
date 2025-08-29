@@ -1,0 +1,14 @@
+runtime: python311
+
+env_variables:
+  FRED_API_KEY: "YOUR_FRED_API_KEY"
+  TELEGRAM_BOT_TOKEN: "YOUR_BOT_TOKEN"
+  TELEGRAM_CHAT_ID: "YOUR_CHAT_ID"
+
+handlers:
+- url: /.*
+  script: auto
+
+automatic_scaling:
+  min_instances: 0
+  max_instances: 2
