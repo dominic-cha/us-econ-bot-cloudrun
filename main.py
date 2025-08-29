@@ -9,7 +9,7 @@ import logging
 import time
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify
-import schedule
+# import schedule
 import threading
 import pytz
 
