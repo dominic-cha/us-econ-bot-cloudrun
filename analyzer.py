@@ -250,48 +250,54 @@ class EconomicAnalyzer:
             return "🔵 매우 낮음 (Very Low)"
     
     def _generate_recommendations(self, market_phase: str, risk_level: str, alerts: List) -> List[str]:
-        """투자 권고사항 생성"""
+        """투자 권고사항 생성 (이모티콘 제거)"""
         
         recommendations = []
         
         # 시장 국면별 권고
         if "침체" in market_phase:
             recommendations.extend([
-                "💰 현금 비중 확대 권고",
-                "🛡️ 방어주 (유틸리티, 필수소비재) 관심",
-                "📊 장기 국채 비중 증가 고려"
+                "현금 비중 확대 권고",
+                "방어주 (유틸리티, 필수소비재) 관심",
+                "장기 국채 비중 증가 고려"
             ])
         elif "둔화" in market_phase:
             recommendations.extend([
-                "⚖️ 포트폴리오 리밸런싱 시점",
-                "🏦 배당주 비중 증가 검토",
-                "📉 성장주 비중 축소 고려"
+                "포트폴리오 리밸런싱 시점",
+                "배당주 비중 증가 검토",
+                "성장주 비중 축소 고려"
             ])
         elif "과열" in market_phase:
             recommendations.extend([
-                "⚠️ 차익실현 시점 검토",
-                "🔄 리스크 관리 강화 필요",
-                "💵 단기 유동성 확보"
+                "차익실현 시점 검토",
+                "리스크 관리 강화 필요",
+                "단기 유동성 확보"
             ])
         elif "확장" in market_phase:
             recommendations.extend([
-                "📈 주식 비중 유지/확대",
-                "🏭 경기민감주 관심",
-                "🚀 성장주 투자 기회"
+                "주식 비중 유지/확대",
+                "경기민감주 관심",
+                "성장주 투자 기회"
             ])
         
         # 리스크 레벨별 권고
         if "매우 높음" in risk_level or "높음" in risk_level:
-            recommendations.append("🛑 레버리지 투자 금지")
-            recommendations.append("🦺 헤지 포지션 구축")
+            recommendations.append("레버리지 투자 금지")
+            recommendations.append("헤지 포지션 구축")
         
         # 특별 경고 사항
         for alert in alerts[:2]:  # 상위 2개 경고만
             if alert['status'] == 'critical':
                 if 'Sahm' in alert['indicator']:
-                    recommendations.append("🚨 경기침체 대비 포지션 조정")
+                    recommendations.append("경기침체 대비 포지션 조정")
                 elif '수익률' in alert['indicator']:
-                    recommendations.append("📉 수익률 역전 - 방어적 포지션")
+                    recommendations.append("수익률 역전 - 방어적 포지션")
+                elif 'ISM' in alert['indicator']:
+                    recommendations.append("제조업/서비스업 위축 - 경기순환주 회피")
+        
+        # ISM 지수 관련 권고
+        if any('ISM' in ind for ind in [a['indicator'] for a in alerts]):
+            recommendations.append("ISM 50 미만 - 경기둔화 대비")
         
         return recommendations[:5]  # 최대 5개 권고사항
     
