@@ -3,5 +3,4 @@ schedule==1.2.0
 google-cloud-secret-manager==2.19.0
 google-cloud-logging==3.8.0
 flask==3.0.0
-python-telegram-bot==20.7
 gunicorn==21.2.0
