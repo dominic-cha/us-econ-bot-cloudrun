@@ -1,0 +1,7 @@
+steps:
+  # App Engine에 배포
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args: ['app', 'deploy', '--quiet', '--project=us-econ-bot']
+
+timeout: '1200s'
