@@ -62,18 +62,6 @@ ECONOMIC_INDICATORS = {
         'importance': 'critical',
         'description': '기준금리'
     },
-    'DGS10': {
-        'name': '10년 국채 수익률',
-        'unit': '%',
-        'importance': 'important',
-        'description': '장기금리 지표'
-    },
-    'DGS2': {
-        'name': '2년 국채 수익률',
-        'unit': '%',
-        'importance': 'important',
-        'description': '단기금리 지표'
-    },
     'RSAFS': {
         'name': '소매판매',
         'unit': '%',
@@ -125,147 +113,89 @@ def get_economic_data(series_id):
         logger.error(f"경제지표 {series_id} 데이터 가져오기 실패: {e}")
         return None
 
-def analyze_yield_curve():
-    """수익률 곡선 분석"""
+def get_investment_insights():
+    """투자 포인트 생성"""
+    insights = []
+    
     try:
-        dgs2_data = get_economic_data('DGS2')
-        dgs10_data = get_economic_data('DGS10')
-        
-        if dgs2_data and dgs10_data:
-            spread = dgs10_data['value'] - dgs2_data['value']
-            
-            if spread < 0:
-                return "⚠️ 수익률 역전 (경기침체 신호)"
-            elif spread < 0.5:
-                return "🟡 수익률 곡선 평탄화"
-            else:
-                return "✅ 정상적인 수익률 곡선"
-        
-        return "데이터 없음"
-        
-    except Exception:
-        return "분석 불가"
-
-def get_market_sentiment():
-    """시장 심리 분석"""
-    try:
-        # 주요 지표들로 시장 심리 판단
-        unemployment = get_economic_data('UNRATE')
-        cpi = get_economic_data('CPIAUCSL')
-        
-        sentiment_score = 0
-        insights = []
-        
-        if unemployment and unemployment['change'] < 0:
-            sentiment_score += 1
-            insights.append("고용시장 개선")
-        elif unemployment and unemployment['change'] > 0.2:
-            sentiment_score -= 1
-            insights.append("고용시장 악화")
-        
-        if cpi and cpi['value'] < 3.0:
-            sentiment_score += 1
-            insights.append("인플레이션 안정")
-        elif cpi and cpi['value'] > 4.0:
-            sentiment_score -= 1
-            insights.append("인플레이션 우려")
-        
-        # 수익률 곡선 분석 추가
-        yield_analysis = analyze_yield_curve()
-        if "역전" in yield_analysis:
-            sentiment_score -= 2
-            insights.append("수익률 역전 위험")
-        
-        if sentiment_score >= 1:
-            return "🟢 긍정적", insights
-        elif sentiment_score <= -1:
-            return "🔴 부정적", insights
-        else:
-            return "🟡 중립적", insights
-            
-    except Exception:
-        return "🟡 분석 불가", []
-
-def format_economic_briefing():
-    """경제지표 브리핑 메시지 생성"""
-    try:
-        korean_time = datetime.now(KST)
-        
-        message = f"""🇺🇸 미국 경제지표 브리핑
-{korean_time.strftime('%Y년 %m월 %d일')}
-{'='*30}
-
-📊 핵심 경제지표"""
-        
-        # 중요 지표들 먼저 표시
-        critical_indicators = {k: v for k, v in ECONOMIC_INDICATORS.items() 
-                             if v['importance'] == 'critical'}
-        
-        for series_id, info in critical_indicators.items():
-            data = get_economic_data(series_id)
-            
-            if data:
-                message += f"\n• {info['name']}: {data['value']}{info['unit']} {data['trend']}"
-                if abs(data['change']) >= 0.01:  # 유의미한 변화만 표시
-                    sign = "+" if data['change'] > 0 else ""
-                    message += f" ({sign}{data['change']:.2f})"
-            else:
-                message += f"\n• {info['name']}: 데이터 없음"
-        
-        # 금융시장 지표
-        message += "\n\n💰 금융시장"
-        
-        # 국채 수익률 및 분석
-        dgs10_data = get_economic_data('DGS10')
-        dgs2_data = get_economic_data('DGS2')
-        
-        if dgs10_data:
-            message += f"\n• 10년 국채: {dgs10_data['value']}% {dgs10_data['trend']}"
-        if dgs2_data:
-            message += f"\n• 2년 국채: {dgs2_data['value']}% {dgs2_data['trend']}"
-        
-        # 수익률 곡선 분석
-        yield_analysis = analyze_yield_curve()
-        message += f"\n• 수익률 곡선: {yield_analysis}"
-        
-        # 기타 경제활동 지표
-        message += "\n\n📈 경제활동"
-        retail_data = get_economic_data('RSAFS')
-        if retail_data:
-            message += f"\n• 소매판매: {retail_data['value']}% {retail_data['trend']}"
-        
-        # 시장 심리 분석
-        sentiment, insights = get_market_sentiment()
-        message += f"\n\n💡 시장 전망: {sentiment}"
-        
-        if insights:
-            for insight in insights[:3]:  # 최대 3개까지
-                message += f"\n  • {insight}"
-        
-        # 투자 시사점
-        message += "\n\n🎯 투자 포인트"
-        
-        # 금리 기반 시사점
+        # 연방기금 금리와 장기 금리 비교
         fed_data = get_economic_data('FEDFUNDS')
+        dgs10_data = get_economic_data('DGS10')
+        
         if fed_data and dgs10_data:
             if fed_data['value'] > dgs10_data['value']:
-                message += "\n  • 금리 역전 - 채권 투자 매력도 상승"
+                insights.append("금리 역전 - 채권 투자 매력도 상승")
             else:
-                message += "\n  • 정상 금리 환경 - 주식 투자 우호적"
+                insights.append("정상 금리 환경 - 주식 투자 우호적")
         
-        # 인플레이션 기반 시사점
+        # 인플레이션 상황 판단
         cpi_data = get_economic_data('CPIAUCSL')
         if cpi_data:
             if cpi_data['value'] < 2.5:
-                message += "\n  • 인플레이션 안정 - 성장주 유리"
+                insights.append("인플레이션 안정 - 성장주 유리")
             elif cpi_data['value'] > 4.0:
-                message += "\n  • 인플레이션 위험 - 실물자산 고려"
+                insights.append("인플레이션 위험 - 실물자산 고려")
+            else:
+                insights.append("인플레이션 적정 수준 - 균형 포트폴리오")
         
-        message += f"""
+        # 고용 시장 상황
+        unemployment_data = get_economic_data('UNRATE')
+        if unemployment_data and unemployment_data['change'] > 0.2:
+            insights.append("고용시장 둔화 - 방어주 비중 증가")
+        
+        return insights[:2]  # 최대 2개까지만 반환
+        
+    except Exception as e:
+        logger.error(f"투자 포인트 생성 실패: {e}")
+        return ["시장 상황 모니터링 필요"]
 
-📊 데이터: Federal Reserve Bank of St. Louis
-⏰ 업데이트: {korean_time.strftime('%H:%M KST')}
-📅 다음 브리핑: 내일 오전 8시"""
+def format_economic_briefing():
+    """경제지표 브리핑 메시지 생성 (새 포맷)"""
+    try:
+        korean_time = datetime.now(KST)
+        
+        # 제목 및 날짜
+        message = f"""🇺🇸 미국 경제지표 브리핑 ({korean_time.strftime('%Y-%m-%d')})
+--------------------
+
+📈 경제지표"""
+        
+        # 각 지표 데이터 수집 및 포맷팅
+        for series_id, info in ECONOMIC_INDICATORS.items():
+            data = get_economic_data(series_id)
+            
+            if data:
+                # 값 포맷팅
+                if info['unit'] == '%':
+                    if series_id in ['CPIAUCSL', 'RSAFS']:  # 절대값으로 표시할 지표들
+                        value_str = f"{data['value']}{info['unit']}"
+                    else:
+                        value_str = f"{data['value']:.2f}{info['unit']}"
+                else:
+                    value_str = f"{data['value']}{info['unit']}"
+                
+                # 변화량 포맷팅
+                if abs(data['change']) >= 0.001:  # 유의미한 변화만 표시
+                    if data['change'] > 0:
+                        change_str = f" ({data['change']:+.2f})"
+                    else:
+                        change_str = f" ({data['change']:.2f})"
+                else:
+                    change_str = ""
+                
+                message += f"\n• {info['name']}: {value_str} {data['trend']}{change_str}"
+            else:
+                message += f"\n• {info['name']}: 데이터 없음"
+        
+        # 투자 포인트 추가
+        insights = get_investment_insights()
+        if insights:
+            message += "\n\n🎯 투자 포인트"
+            for insight in insights:
+                message += f"\n  • {insight}"
+        
+        # 업데이트 시간 추가
+        message += f"\n\n(업데이트: {korean_time.strftime('%H:%M KST')})"
         
         return message
         
@@ -274,8 +204,7 @@ def format_economic_briefing():
         return f"""⚠️ 브리핑 생성 중 오류가 발생했습니다.
 
 🕐 시간: {datetime.now(KST).strftime('%Y-%m-%d %H:%M KST')}
-📞 지원: 시스템 관리자에게 문의하세요.
-🔄 재시도: 몇 분 후 다시 시도됩니다."""
+📞 지원: 시스템 관리자에게 문의하세요."""
 
 def send_telegram_message(message):
     """텔레그램 메시지 전송"""
