@@ -1,3 +1,105 @@
+import os
+import requests
+import schedule
+import time
+from datetime import datetime, timezone, timedelta
+from flask import Flask, jsonify, request
+from google.cloud import secretmanager
+import logging
+
+# Flask 앱 초기화
+app = Flask(__name__)
+
+# 로깅 설정
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# 환경 변수
+PROJECT_ID = os.getenv('PROJECT_ID', 'us-econ-bot')
+KST = timezone(timedelta(hours=9))
+
+# Secret Manager 클라이언트 (지연 초기화)
+secret_client = None
+
+def get_secret_client():
+    """Secret Manager 클라이언트 지연 초기화"""
+    global secret_client
+    if secret_client is None:
+        try:
+            secret_client = secretmanager.SecretManagerServiceClient()
+        except Exception as e:
+            print(f"⚠️ Secret Manager 클라이언트 초기화 실패: {e}")
+            secret_client = False
+    return secret_client
+
+def get_secret(secret_name):
+    """Secret Manager에서 시크릿 값 가져오기 (에러 방지)"""
+    try:
+        client = get_secret_client()
+        if not client:
+            print(f"❌ Secret Manager 클라이언트 없음: {secret_name}")
+            return None
+            
+        name = f"projects/{PROJECT_ID}/secrets/{secret_name}/versions/latest"
+        response = client.access_secret_version(request={"name": name})
+        return response.payload.data.decode("UTF-8")
+    except Exception as e:
+        print(f"❌ 시크릿 {secret_name} 가져오기 실패: {e}")
+        return None
+
+# API 키 및 설정값 로드 (안전한 초기화)
+try:
+    FRED_API_KEY = get_secret('fred-api-key')
+except Exception as e:
+    print(f"⚠️ FRED API Key 로드 실패: {e}")
+    FRED_API_KEY = None
+
+try:
+    BOT_TOKEN = get_secret('telegram-bot-token')
+except Exception as e:
+    print(f"⚠️ Bot Token 로드 실패: {e}")
+    BOT_TOKEN = None
+
+try:
+    CHAT_ID = get_secret('telegram-chat-id')
+except Exception as e:
+    print(f"⚠️ Chat ID 로드 실패: {e}")
+    CHAT_ID = None
+
+# 주요 경제지표 정의
+ECONOMIC_INDICATORS = {
+    'UNRATE': {
+        'name': '실업률',
+        'unit': '%',
+        'importance': 'critical',
+        'description': '미국 실업률'
+    },
+    'CPIAUCSL': {
+        'name': 'CPI',
+        'unit': '%',
+        'importance': 'critical', 
+        'description': '소비자물가지수 (전년동월대비)'
+    },
+    'PAYEMS': {
+        'name': '비농업 취업자',
+        'unit': '천명',
+        'importance': 'critical',
+        'description': '월간 고용 증가'
+    },
+    'FEDFUNDS': {
+        'name': '연방기금 금리',
+        'unit': '%',
+        'importance': 'critical',
+        'description': '기준금리'
+    },
+    'RSAFS': {
+        'name': '소매판매',
+        'unit': '%',
+        'importance': 'important',
+        'description': '월간 소매판매 증감률'
+    }
+}
+
 def get_economic_data(series_id):
     """FRED API에서 경제지표 데이터 가져오기 (개선된 버전)"""
     try:
@@ -138,6 +240,32 @@ def format_economic_briefing():
         logger.error(f"브리핑 메시지 생성 실패: {e}")
         return f"⚠️ 브리핑 생성 중 오류가 발생했습니다.\n\n업데이트: {datetime.now(KST).strftime('%H:%M KST')}"
 
+def send_telegram_message(message):
+    """텔레그램 메시지 전송"""
+    try:
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        payload = {
+            'chat_id': CHAT_ID,
+            'text': message,
+            'parse_mode': 'HTML',
+            'disable_web_page_preview': True
+        }
+        
+        response = requests.post(url, json=payload, timeout=15)
+        response.raise_for_status()
+        
+        result = response.json()
+        if result.get('ok'):
+            logger.info("✅ 텔레그램 브리핑 전송 성공")
+            return True
+        else:
+            logger.error(f"❌ 텔레그램 API 오류: {result}")
+            return False
+        
+    except Exception as e:
+        logger.error(f"❌ 텔레그램 전송 실패: {e}")
+        return False
+
 def send_daily_briefing():
     """일일 경제지표 브리핑 전송 (로깅 강화)"""
     logger.info("📊 일일 경제지표 브리핑 시작")
@@ -175,3 +303,134 @@ def send_daily_briefing():
     except Exception as e:
         logger.error(f"❌ 브리핑 프로세스 오류: {e}")
         return False
+
+# Flask 라우트
+@app.route('/')
+def health_check():
+    """헬스 체크"""
+    korean_time = datetime.now(KST)
+    
+    # 설정 상태 확인
+    config_status = {
+        'fred_api': '✅' if FRED_API_KEY else '❌',
+        'telegram_bot': '✅' if BOT_TOKEN else '❌',
+        'telegram_chat': '✅' if CHAT_ID else '❌'
+    }
+    
+    return jsonify({
+        'status': 'healthy',
+        'service': 'US Economic Indicators Bot',
+        'timestamp': korean_time.isoformat(),
+        'config': config_status,
+        'indicators_count': len(ECONOMIC_INDICATORS),
+        'timezone': 'Asia/Seoul'
+    })
+
+@app.route('/trigger-briefing', methods=['POST'])
+def trigger_briefing():
+    """Cloud Scheduler에서 호출하는 브리핑 트리거"""
+    try:
+        logger.info("🔔 스케줄러에서 브리핑 트리거 호출")
+        success = send_daily_briefing()
+        
+        if success:
+            return jsonify({
+                'status': 'success',
+                'message': '브리핑 전송 완료',
+                'timestamp': datetime.now(KST).isoformat()
+            })
+        else:
+            return jsonify({
+                'status': 'error', 
+                'message': '브리핑 전송 실패',
+                'timestamp': datetime.now(KST).isoformat()
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"브리핑 트리거 오류: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e),
+            'timestamp': datetime.now(KST).isoformat()
+        }), 500
+
+@app.route('/test-briefing')
+def test_briefing():
+    """브리핑 테스트용 엔드포인트"""
+    try:
+        logger.info("🧪 테스트 브리핑 요청")
+        success = send_daily_briefing()
+        
+        return jsonify({
+            'status': 'success' if success else 'error',
+            'message': '테스트 브리핑 완료' if success else '테스트 브리핑 실패',
+            'timestamp': datetime.now(KST).isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"테스트 브리핑 오류: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e),
+            'timestamp': datetime.now(KST).isoformat()
+        }), 500
+
+@app.route('/indicators')
+def get_indicators():
+    """현재 모니터링 중인 경제지표 목록"""
+    return jsonify({
+        'indicators': ECONOMIC_INDICATORS,
+        'total_count': len(ECONOMIC_INDICATORS),
+        'critical_count': len([k for k, v in ECONOMIC_INDICATORS.items() if v['importance'] == 'critical']),
+        'timestamp': datetime.now(KST).isoformat()
+    })
+
+if __name__ == '__main__':
+    # 서비스 시작 로그
+    print("🚀 US Economic Indicators Bot 시작")
+    print(f"📊 모니터링 지표 수: {len(ECONOMIC_INDICATORS)}개")
+    print(f"🕐 현재 한국 시간: {datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S KST')}")
+    
+    # 설정 확인 (Secret Manager 에러 방지)
+    try:
+        if FRED_API_KEY:
+            print("✅ FRED API Key 설정됨")
+        else:
+            print("❌ FRED API Key 없음")
+    except Exception as e:
+        print(f"⚠️ FRED API Key 확인 중 오류: {e}")
+    
+    try:
+        if BOT_TOKEN:
+            print("✅ Telegram Bot Token 설정됨")
+        else:
+            print("❌ Telegram Bot Token 없음")
+    except Exception as e:
+        print(f"⚠️ Telegram Bot Token 확인 중 오류: {e}")
+    
+    try:
+        if CHAT_ID:
+            print("✅ Telegram Chat ID 설정됨")
+        else:
+            print("❌ Telegram Chat ID 없음")
+    except Exception as e:
+        print(f"⚠️ Telegram Chat ID 확인 중 오류: {e}")
+    
+    print("🌐 Flask 웹서버 시작 중...")
+    
+    # Flask 서버 시작 (수정된 부분)
+    port = int(os.getenv('PORT', 8080))
+    print(f"🔌 포트 {port}에서 서버 시작")
+    
+    try:
+        app.run(
+            host='0.0.0.0', 
+            port=port, 
+            debug=False,
+            threaded=True,  # 추가
+            use_reloader=False  # 추가
+        )
+    except Exception as e:
+        print(f"❌ Flask 서버 시작 실패: {e}")
+        import sys
+        sys.exit(1)
